@@ -52,8 +52,9 @@ On activation the node:
 
 | Source | Key | Default |
 |--------|-----|---------|
-| Constructor | `mcp_host` / `mcp_port` | `"0.0.0.0"` / `8000` |
-| Environment | `MCP_HOST` / `MCP_PORT` | overrides constructor |
+| Constructor | `mcp_host` / `mcp_port` | `"127.0.0.1"` / `8000` |
+| Bringup config | `mcp_host` / `mcp_port` | overrides constructor |
+| Entry-point scripts | `MCP_HOST` / `MCP_PORT` env vars | used in `server_node.py` / `permission_node.py` CLI entry points |
 
 ## TagentacleMCPServer (Executable Node)
 

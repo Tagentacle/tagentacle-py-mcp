@@ -52,8 +52,9 @@ asyncio.run(main())
 
 | 来源 | 键 | 默认值 |
 |------|-----|--------|
-| 构造函数 | `mcp_host` / `mcp_port` | `"0.0.0.0"` / `8000` |
-| 环境变量 | `MCP_HOST` / `MCP_PORT` | 覆盖构造函数 |
+| 构造函数 | `mcp_host` / `mcp_port` | `"127.0.0.1"` / `8000` |
+| Bringup config | `mcp_host` / `mcp_port` | 覆盖构造函数 |
+| 入口脚本 | `MCP_HOST` / `MCP_PORT` 环境变量 | 在 `server_node.py` / `permission_node.py` CLI 入口中使用 |
 
 ## TagentacleMCPServer（可执行节点）
 
