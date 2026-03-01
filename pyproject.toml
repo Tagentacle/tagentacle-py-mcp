@@ -1,7 +1,7 @@
 [project]
 name = "tagentacle-py-mcp"
-version = "0.2.0"
-description = "Tagentacle MCP Integration — MCPServerNode base class with Streamable HTTP transport and /mcp/directory discovery"
+version = "0.3.0"
+description = "Tagentacle MCP Integration — MCPServerNode base class with Streamable HTTP transport, /mcp/directory discovery, and TACL (Tagentacle Access Control Layer) JWT authentication"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -11,6 +11,9 @@ dependencies = [
     "uvicorn>=0.20",
     "starlette",
 ]
+
+[project.optional-dependencies]
+permission = []
 
 [tool.uv.sources]
 tagentacle-py-core = { path = "../python-sdk-core", editable = true }

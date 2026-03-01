@@ -5,6 +5,23 @@ All notable changes to **tagentacle-py-mcp** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-01
+
+### Added
+- **TACL (Tagentacle Access Control Layer)** — MCP-level JWT authentication system:
+  - **`auth.py`**: Pure-stdlib HS256 JWT sign/verify primitives. `CallerIdentity` contextvar for tool handlers to read authenticated caller info. `check_tool_authorized()` for declarative tool-level ACL.
+  - **`auth_client.py`**: `AuthMCPClient` — login to permission server with raw token, obtain JWT, connect to auth-enabled MCP servers with Bearer header.
+  - **`permission.py`**: `PermissionMCPServerNode` — pre-built MCP Server Node that issues JWT credentials. SQLite-backed agent registry with tool grants. Exposes `authenticate` (public), plus admin tools (`register_agent`, `update_grants`, `revoke_agent`, `get_grants`, `list_agents`). Also registers bus Services at `/tagentacle/permission/*`.
+  - **`permission_node.py`**: Entry point script for running PermissionMCPServerNode standalone.
+- **`MCPServerNode.auth_required`** constructor parameter (default `False`):
+  - When `True`, wraps Starlette app with `TACLAuthMiddleware` — validates JWT Bearer tokens, sets `CallerIdentity` contextvar per-request.
+  - `/mcp/directory` messages now include `auth_required` field.
+- **Optional dependency group** `[permission]` in `pyproject.toml` for SQLite-based permission server.
+- **`tagentacle.toml`** new entry point: `permission_node = "permission_node:main"`.
+
+### Changed
+- `__init__.py` now exports all auth symbols: `CallerIdentity`, `get_caller_identity`, `sign_credential`, `verify_credential`, `check_tool_authorized`, `AuthError`, `CredentialInvalid`, `ToolNotAuthorized`, `AuthMCPClient`, `TACLAuthMiddleware`.
+
 ## [0.2.0] - 2026-03-15
 
 ### Added

@@ -82,12 +82,84 @@ await server.spin()
 | `ping_daemon` | Check Daemon health |
 | `describe_topic_schema` | Get Topic message JSON Schema |
 
+## TACL — Tagentacle Access Control Layer
+
+JWT-based MCP tool-level authentication. Three conjugate modules share `auth.py` as the symmetric center:
+
+```
+              auth.py (HS256 JWT protocol)
+             /           |            \
+  permission.py    server.py middleware  auth_client.py
+  sign_credential  verify_credential    carry JWT
+  (issuer)         (verifier)           (consumer)
+```
+
+### Enable Auth on Your MCP Server
+
+```python
+class SecureServer(MCPServerNode):
+    def __init__(self):
+        super().__init__("secure_server", mcp_port=8100, auth_required=True)
+
+    def on_configure(self, config):
+        super().on_configure(config)
+
+        @self.mcp.tool(description="Sensitive operation")
+        def do_something() -> str:
+            from tagentacle_py_mcp.auth import get_caller_identity
+            caller = get_caller_identity()
+            return f"Hello, {caller.agent_id}!"
+```
+
+Set `TAGENTACLE_AUTH_SECRET` in the environment (shared by all auth-enabled servers and the permission server).
+
+### AuthMCPClient (Agent Side)
+
+```python
+from tagentacle_py_mcp import AuthMCPClient
+
+client = AuthMCPClient(
+    token="tok_abc123",
+    permission_server_url="http://127.0.0.1:8200/mcp",
+)
+await client.login()  # → JWT credential
+
+async with client.connect("http://127.0.0.1:8100/mcp") as session:
+    tools = await session.list_tools()  # only granted tools visible
+    result = await session.call_tool("do_something", {})
+```
+
+### PermissionMCPServerNode (Credential Issuer)
+
+Pre-built MCP Server that manages agent registry in SQLite and issues JWTs:
+
+```bash
+# Install with permission support
+uv pip install tagentacle-py-mcp[permission]
+
+# Run standalone
+export TAGENTACLE_AUTH_SECRET="your-secret"
+python permission_node.py
+```
+
+| MCP Tool | Access | Description |
+|----------|--------|-------------|
+| `authenticate` | Public | Exchange raw token for JWT credential |
+| `register_agent` | Admin | Register new agent with tool grants |
+| `update_grants` | Admin | Update tool grants for an agent |
+| `revoke_agent` | Admin | Revoke an agent |
+| `get_grants` | Admin | Query agent's current grants |
+| `list_agents` | Admin | List all registered agents |
+
+Also exposes bus Services: `/tagentacle/permission/register_agent`, `/tagentacle/permission/get_grants`.
+
 ## Tagentacle Pkg
 
 This is a Tagentacle **executable pkg** (`type = "executable"` in `tagentacle.toml`) with a library component.
 
-- **Executable**: `TagentacleMCPServer` node (entry point: `tagentacle_py_mcp.server:main`)
-- **Library**: `MCPServerNode` base class importable by other pkgs
+- **Executable**: `TagentacleMCPServer` node (entry point: `server_node:main`)
+- **Executable**: `PermissionMCPServerNode` (entry point: `permission_node:main`)
+- **Library**: `MCPServerNode` base class, TACL auth primitives, `AuthMCPClient` — importable by other pkgs
 
 Dependencies: `[dependencies] tagentacle = ["tagentacle_py_core"]`
 

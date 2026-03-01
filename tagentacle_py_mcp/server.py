@@ -40,7 +40,19 @@ from typing import Any, Annotated, Dict, List, Optional
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from tagentacle_py_core import LifecycleNode
+
+from tagentacle_py_mcp.auth import (
+    verify_credential,
+    CallerIdentity,
+    set_caller_identity,
+    check_tool_authorized,
+    CredentialInvalid,
+    ToolNotAuthorized,
+)
 
 logger = logging.getLogger("tagentacle.mcp.server")
 
@@ -67,6 +79,11 @@ class MCPServerNode(LifecycleNode):
         mcp_path: URL path for the MCP endpoint (default: "/mcp").
         concurrent_sessions: Whether this server supports concurrent sessions.
         description: Human-readable description of this server.
+        auth_required: If True, requires a valid JWT Bearer token on every
+            HTTP request. The token's ``tool_grants`` are enforced: only
+            granted tools are visible in ``list_tools`` and callable.
+            The caller's ``agent_id`` is available to tool handlers via
+            ``tagentacle_py_mcp.auth.get_caller_identity()``.
     """
 
     def __init__(
@@ -79,6 +96,7 @@ class MCPServerNode(LifecycleNode):
         mcp_path: str = "/mcp",
         concurrent_sessions: bool = True,
         description: str = "",
+        auth_required: bool = False,
     ):
         super().__init__(node_id)
         self._mcp_port = mcp_port
@@ -86,6 +104,7 @@ class MCPServerNode(LifecycleNode):
         self._mcp_path = mcp_path
         self._concurrent_sessions = concurrent_sessions
         self._server_description = description
+        self._auth_required = auth_required
         self._uvicorn_server: Optional[uvicorn.Server] = None
         self._http_task: Optional[asyncio.Task] = None
 
@@ -120,6 +139,17 @@ class MCPServerNode(LifecycleNode):
         """Start the Streamable HTTP server and publish to /mcp/directory."""
         # Start uvicorn in a background task
         starlette_app = self.mcp.streamable_http_app()
+
+        # Wrap with auth middleware when auth is enabled
+        if self._auth_required:
+            starlette_app.add_middleware(
+                TACLAuthMiddleware, server_id=self.node_id
+            )
+            logger.info(
+                f"MCP Server '{self.node_id}' auth enabled — "
+                "JWT Bearer token required."
+            )
+
         config = uvicorn.Config(
             starlette_app,
             host=self._mcp_host,
@@ -179,11 +209,66 @@ class MCPServerNode(LifecycleNode):
             "tools_summary": tools_summary,
             "description": self._server_description,
             "publisher_node_id": self.node_id,
+            "auth_required": self._auth_required,
         }
         try:
             await self.publish(MCP_DIRECTORY_TOPIC, description)
         except Exception as e:
             logger.warning(f"Failed to publish to {MCP_DIRECTORY_TOPIC}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# TACL Auth Middleware
+# ---------------------------------------------------------------------------
+
+class TACLAuthMiddleware(BaseHTTPMiddleware):
+    """Starlette middleware that enforces JWT Bearer authentication.
+
+    On every request:
+      1. Extracts ``Authorization: Bearer <jwt>`` from headers.
+      2. Verifies the JWT signature and expiry via ``verify_credential()``.
+      3. Sets the ``CallerIdentity`` in a ``contextvars.ContextVar`` so tool
+         handlers can read it via ``get_caller_identity()``.
+
+    If authentication fails the request is rejected with HTTP 401.
+    """
+
+    def __init__(self, app, server_id: str = ""):
+        super().__init__(app)
+        self.server_id = server_id
+
+    async def dispatch(self, request: Request, call_next):
+        # Extract Bearer token
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse(
+                {"error": "Missing or malformed Authorization header. "
+                          "Expected: Bearer <jwt>"},
+                status_code=401,
+            )
+
+        token = auth_header[7:]  # strip "Bearer "
+
+        try:
+            payload = verify_credential(token)
+        except CredentialInvalid as exc:
+            return JSONResponse(
+                {"error": f"Authentication failed: {exc}"},
+                status_code=401,
+            )
+
+        # Set caller identity for the duration of this request
+        identity = CallerIdentity(
+            agent_id=payload["agent_id"],
+            tool_grants=payload.get("tool_grants", {}),
+        )
+        set_caller_identity(identity)
+        try:
+            response = await call_next(request)
+        finally:
+            set_caller_identity(None)
+
+        return response
 
 
 class TagentacleMCPServer(MCPServerNode):
