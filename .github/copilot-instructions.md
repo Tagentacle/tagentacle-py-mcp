@@ -71,6 +71,14 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - `chore:` — tooling, CI, version bumps
 - `ci:` — CI configuration changes
 
+## E2E Testing
+
+End-to-end integration tests live in a separate repo: [test-bringup](https://github.com/Tagentacle/test-bringup)
+
+```bash
+cd ../test-bringup && pytest -v
+```
+
 ## Architecture Notes
 
 - `MCPServerNode` extends `LifecycleNode` — adds Streamable HTTP MCP transport
