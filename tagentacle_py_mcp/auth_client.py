@@ -91,21 +91,15 @@ class AuthMCPClient:
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
 
-                result = await session.call_tool(
-                    "authenticate", {"token": self._token}
-                )
+                result = await session.call_tool("authenticate", {"token": self._token})
 
                 # The tool returns a list of TextContent; first item is the JWT
                 if not result.content:
-                    raise RuntimeError(
-                        "Permission server returned empty response"
-                    )
+                    raise RuntimeError("Permission server returned empty response")
 
                 text = result.content[0].text
                 if text.startswith("Error:"):
-                    raise RuntimeError(
-                        f"Authentication failed: {text}"
-                    )
+                    raise RuntimeError(f"Authentication failed: {text}")
 
                 self._credential = text
                 logger.info("Login successful — JWT credential obtained.")
@@ -125,15 +119,15 @@ class AuthMCPClient:
             RuntimeError: If ``login()`` has not been called yet.
         """
         if not self._credential:
-            raise RuntimeError(
-                "Not authenticated — call login() before connect()."
-            )
+            raise RuntimeError("Not authenticated — call login() before connect().")
 
         headers = {"Authorization": f"Bearer {self._credential}"}
 
-        async with streamablehttp_client(
-            server_url, headers=headers
-        ) as (read_stream, write_stream, _):
+        async with streamablehttp_client(server_url, headers=headers) as (
+            read_stream,
+            write_stream,
+            _,
+        ):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 yield session

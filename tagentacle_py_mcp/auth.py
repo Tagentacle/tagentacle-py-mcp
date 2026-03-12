@@ -50,9 +50,11 @@ from typing import Any, Dict, List, Optional
 # Context variable: set by the auth middleware, read by tool handlers
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CallerIdentity:
     """Identity of the authenticated MCP caller for the current request."""
+
     agent_id: str
     tool_grants: Dict[str, List[str]] = field(default_factory=dict)
     space: Optional[str] = None
@@ -60,7 +62,8 @@ class CallerIdentity:
 
 #: Set per-request by the auth middleware; read via ``get_caller_identity()``.
 _caller_identity_var: ContextVar[Optional[CallerIdentity]] = ContextVar(
-    "tacl_caller_identity", default=None,
+    "tacl_caller_identity",
+    default=None,
 )
 
 
@@ -80,6 +83,7 @@ def set_caller_identity(identity: Optional[CallerIdentity]) -> None:
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
+
 
 class AuthError(Exception):
     """Base class for authentication / authorization errors."""
@@ -162,9 +166,7 @@ def sign_credential(
         _b64url_encode(json.dumps(payload, separators=(",", ":")).encode()),
     ]
     signing_input = f"{segments[0]}.{segments[1]}"
-    sig = hmac.new(
-        secret.encode(), signing_input.encode(), hashlib.sha256
-    ).digest()
+    sig = hmac.new(secret.encode(), signing_input.encode(), hashlib.sha256).digest()
     segments.append(_b64url_encode(sig))
 
     return ".".join(segments)

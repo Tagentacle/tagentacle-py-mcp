@@ -140,12 +140,9 @@ class MCPServerNode(LifecycleNode):
 
         # Wrap with auth middleware when auth is enabled
         if self._auth_required:
-            starlette_app.add_middleware(
-                TACLAuthMiddleware, server_id=self.node_id
-            )
+            starlette_app.add_middleware(TACLAuthMiddleware, server_id=self.node_id)
             logger.info(
-                f"MCP Server '{self.node_id}' auth enabled — "
-                "JWT Bearer token required."
+                f"MCP Server '{self.node_id}' auth enabled — JWT Bearer token required."
             )
 
         config = uvicorn.Config(
@@ -162,9 +159,7 @@ class MCPServerNode(LifecycleNode):
 
         # Publish server description to /mcp/directory
         await self._publish_directory("available")
-        logger.info(
-            f"MCP Server '{self.node_id}' active at {self.mcp_url}"
-        )
+        logger.info(f"MCP Server '{self.node_id}' active at {self.mcp_url}")
 
     async def on_deactivate(self):
         """Stop the HTTP server and publish unavailable status."""
@@ -219,6 +214,7 @@ class MCPServerNode(LifecycleNode):
 # TACL Auth Middleware
 # ---------------------------------------------------------------------------
 
+
 class TACLAuthMiddleware(BaseHTTPMiddleware):
     """Starlette middleware that enforces JWT Bearer authentication.
 
@@ -240,8 +236,10 @@ class TACLAuthMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("authorization", "")
         if not auth_header.startswith("Bearer "):
             return JSONResponse(
-                {"error": "Missing or malformed Authorization header. "
-                          "Expected: Bearer <jwt>"},
+                {
+                    "error": "Missing or malformed Authorization header. "
+                    "Expected: Bearer <jwt>"
+                },
                 status_code=401,
             )
 
@@ -345,10 +343,12 @@ class TagentacleMCPServer(MCPServerNode):
 
             @self.subscribe(topic)
             async def _on_message(msg):
-                self._subscribed_topics.setdefault(topic, []).append({
-                    "sender": msg.get("sender"),
-                    "payload": msg.get("payload"),
-                })
+                self._subscribed_topics.setdefault(topic, []).append(
+                    {
+                        "sender": msg.get("sender"),
+                        "payload": msg.get("payload"),
+                    }
+                )
 
             return f"Subscribed to '{topic}'. Messages will be buffered."
 
@@ -413,7 +413,9 @@ class TagentacleMCPServer(MCPServerNode):
             description="Call any Service on the Tagentacle bus via RPC and return the response.",
         )
         async def call_bus_service(
-            service: Annotated[str, Field(description="Service name, e.g. '/math/add'")],
+            service: Annotated[
+                str, Field(description="Service name, e.g. '/math/add'")
+            ],
             payload: Annotated[dict, Field(description="Request payload")],
             timeout: Annotated[float, Field(description="Timeout in seconds")] = 30.0,
         ) -> str:
@@ -436,11 +438,7 @@ class TagentacleMCPServer(MCPServerNode):
     ) -> str:
         """Call a Daemon introspection service and return pretty-printed JSON."""
         try:
-            result = await self.call_service(
-                service, payload or {}, timeout=timeout
-            )
+            result = await self.call_service(service, payload or {}, timeout=timeout)
             return json.dumps(result, ensure_ascii=False, indent=2)
         except asyncio.TimeoutError:
             return f"Error: Daemon did not respond to {service} (timeout)."
-
-

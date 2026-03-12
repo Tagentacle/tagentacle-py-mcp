@@ -153,7 +153,9 @@ class _PermissionDB:
         return grants
 
     def update_grants(
-        self, agent_id: str, tool_grants: Dict[str, List[str]],
+        self,
+        agent_id: str,
+        tool_grants: Dict[str, List[str]],
         space: Optional[str] = ...,
     ) -> bool:
         """Replace all tool grants for an agent.  Optionally update space.
@@ -214,6 +216,7 @@ class _PermissionDB:
 # PermissionMCPServerNode
 # ---------------------------------------------------------------------------
 
+
 class PermissionMCPServerNode(MCPServerNode):
     """MCP Server Node that issues JWT credentials and manages agent ACLs.
 
@@ -261,9 +264,8 @@ class PermissionMCPServerNode(MCPServerNode):
             ),
             auth_required=False,  # This server is the auth entry point
         )
-        self._db_path = (
-            db_path
-            or os.environ.get("TAGENTACLE_PERMISSION_DB", "permission.db")
+        self._db_path = db_path or os.environ.get(
+            "TAGENTACLE_PERMISSION_DB", "permission.db"
         )
         self._db: Optional[_PermissionDB] = None
 
@@ -327,7 +329,11 @@ class PermissionMCPServerNode(MCPServerNode):
         try:
             await asyncio.to_thread(
                 self._db.register_agent,
-                agent_id, token, tool_grants, parent_agent_id, space,
+                agent_id,
+                token,
+                tool_grants,
+                parent_agent_id,
+                space,
             )
             return {"status": "ok", "agent_id": agent_id}
         except sqlite3.IntegrityError as exc:
@@ -369,12 +375,24 @@ class PermissionMCPServerNode(MCPServerNode):
             ),
         )
         async def register_agent(
-            admin_token: Annotated[str, Field(description="Admin agent's token for authorization")],
+            admin_token: Annotated[
+                str, Field(description="Admin agent's token for authorization")
+            ],
             agent_id: Annotated[str, Field(description="Unique ID for the new agent")],
             token: Annotated[str, Field(description="Secret token for the new agent")],
-            tool_grants: Annotated[str, Field(description="JSON object: {server_id: [tool_name, ...], ...}")],
-            parent_agent_id: Annotated[Optional[str], Field(description="Parent agent ID (optional)")] = None,
-            space: Annotated[Optional[str], Field(description="Isolated execution space bound to this agent (e.g. Docker container name)")] = None,
+            tool_grants: Annotated[
+                str,
+                Field(description="JSON object: {server_id: [tool_name, ...], ...}"),
+            ],
+            parent_agent_id: Annotated[
+                Optional[str], Field(description="Parent agent ID (optional)")
+            ] = None,
+            space: Annotated[
+                Optional[str],
+                Field(
+                    description="Isolated execution space bound to this agent (e.g. Docker container name)"
+                ),
+            ] = None,
         ) -> str:
             is_admin = await asyncio.to_thread(self._is_admin, admin_token)
             if not is_admin:
@@ -384,7 +402,11 @@ class PermissionMCPServerNode(MCPServerNode):
             except json.JSONDecodeError as exc:
                 return f"Error: Invalid tool_grants JSON: {exc}"
             result = await self._do_register_agent(
-                agent_id, token, grants, parent_agent_id, space,
+                agent_id,
+                token,
+                grants,
+                parent_agent_id,
+                space,
             )
             if "error" in result:
                 return f"Error: {result['error']}"
@@ -396,7 +418,10 @@ class PermissionMCPServerNode(MCPServerNode):
         async def update_grants(
             admin_token: Annotated[str, Field(description="Admin agent's token")],
             agent_id: Annotated[str, Field(description="Target agent ID")],
-            tool_grants: Annotated[str, Field(description="JSON object: {server_id: [tool_name, ...], ...}")],
+            tool_grants: Annotated[
+                str,
+                Field(description="JSON object: {server_id: [tool_name, ...], ...}"),
+            ],
         ) -> str:
             is_admin = await asyncio.to_thread(self._is_admin, admin_token)
             if not is_admin:
@@ -405,9 +430,7 @@ class PermissionMCPServerNode(MCPServerNode):
                 grants = json.loads(tool_grants)
             except json.JSONDecodeError as exc:
                 return f"Error: Invalid tool_grants JSON: {exc}"
-            ok = await asyncio.to_thread(
-                self._db.update_grants, agent_id, grants
-            )
+            ok = await asyncio.to_thread(self._db.update_grants, agent_id, grants)
             if not ok:
                 return f"Error: Agent '{agent_id}' not found"
             return f"Grants updated for '{agent_id}'."
@@ -442,7 +465,8 @@ class PermissionMCPServerNode(MCPServerNode):
                 return f"Error: Agent '{agent_id}' not found"
             return json.dumps(
                 {"agent_id": agent_id, "tool_grants": grants},
-                ensure_ascii=False, indent=2,
+                ensure_ascii=False,
+                indent=2,
             )
 
         @self.mcp.tool(
