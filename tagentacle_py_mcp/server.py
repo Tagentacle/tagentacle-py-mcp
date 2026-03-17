@@ -1,5 +1,5 @@
 """
-Tagentacle MCP Server SDK — MCPServerComponent and TagentacleMCPServer.
+Tagentacle MCP Server SDK — MCPServerComponent and BusMCPServer.
 
 This module provides:
   - MCPServerComponent: Composable MCP Server component. Manages FastMCP +
@@ -7,8 +7,9 @@ This module provides:
     designed for has-a composition with any LifecycleNode.
   - MCPServerNode: DEPRECATED thin wrapper (LifecycleNode + MCPServerComponent)
     for backward compatibility. New code should use MCPServerComponent directly.
-  - TagentacleMCPServer: Built-in MCP Server that exposes Tagentacle bus
+  - BusMCPServer: Built-in MCP Server that exposes Tagentacle bus
     operations (publish, subscribe, call_service, introspection) as MCP Tools.
+    (Previously named TagentacleMCPServer; alias kept for backward compat.)
 
 Architecture:
   - MCP Server is an interface capability, not a Node type.
@@ -355,7 +356,7 @@ class TACLAuthMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class TagentacleMCPServer(LifecycleNode):
+class BusMCPServer(LifecycleNode):
     """Built-in MCP Server exposing Tagentacle bus operations as MCP Tools.
 
     Uses LifecycleNode + MCPServerComponent (composition, not inheritance).
@@ -368,6 +369,8 @@ class TagentacleMCPServer(LifecycleNode):
 
     This allows AI Agents to interact with the entire Tagentacle bus through
     standard MCP tool calls, without needing direct bus protocol knowledge.
+
+    Previously named TagentacleMCPServer. Alias kept for backward compatibility.
     """
 
     def __init__(
@@ -380,7 +383,7 @@ class TagentacleMCPServer(LifecycleNode):
         super().__init__(node_id)
         self.mcp_server = MCPServerComponent(
             server_id=node_id,
-            mcp_name="tagentacle-mcp-server",
+            mcp_name="bus-mcp-server",
             mcp_port=mcp_port,
             description="Built-in MCP Server exposing Tagentacle bus operations as tools.",
         )
@@ -555,3 +558,20 @@ class TagentacleMCPServer(LifecycleNode):
             return json.dumps(result, ensure_ascii=False, indent=2)
         except asyncio.TimeoutError:
             return f"Error: Daemon did not respond to {service} (timeout)."
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatibility alias
+# ---------------------------------------------------------------------------
+
+def _deprecated_alias():
+    import warnings
+    warnings.warn(
+        "TagentacleMCPServer is deprecated, use BusMCPServer instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return BusMCPServer
+
+TagentacleMCPServer = BusMCPServer  # direct alias, no warning on import
+# To emit warnings on instantiation, downstream can check class.__name__.

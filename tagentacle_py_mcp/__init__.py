@@ -8,7 +8,8 @@ This package provides:
     composition with any LifecycleNode.
   - MCPServerNode: DEPRECATED wrapper (LifecycleNode + MCPServerComponent).
     Kept for backward compatibility. Use MCPServerComponent directly.
-  - TagentacleMCPServer: Built-in MCP Server exposing bus operations as MCP Tools.
+  - BusMCPServer: Built-in MCP Server exposing bus operations as MCP Tools.
+    (Previously named TagentacleMCPServer; alias kept for backward compat.)
   - MCP_DIRECTORY_TOPIC: Standard topic name for MCP server discovery.
   - Auth primitives (``tagentacle_py_mcp.auth``): JWT sign/verify, CallerIdentity,
     get_caller_identity(), check_tool_authorized().
@@ -20,7 +21,8 @@ This package provides:
 from tagentacle_py_mcp.server import (
     MCPServerComponent,
     MCPServerNode,
-    TagentacleMCPServer,
+    BusMCPServer,
+    TagentacleMCPServer,  # backward compat alias
     TACLAuthMiddleware,
     MCP_DIRECTORY_TOPIC,
 )
@@ -44,7 +46,8 @@ __all__ = [
     "MCPServerComponent",
     # Server (deprecated wrapper)
     "MCPServerNode",
-    "TagentacleMCPServer",
+    "BusMCPServer",
+    "TagentacleMCPServer",  # backward compat alias
     "TACLAuthMiddleware",
     "MCP_DIRECTORY_TOPIC",
     # Auth primitives
