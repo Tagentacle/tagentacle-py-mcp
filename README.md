@@ -1,13 +1,13 @@
 # Tagentacle MCP Integration
 
-> **The ROS of AI Agents** — MCPServerNode base class and built-in MCP Server for the Tagentacle bus.
+> **The ROS of AI Agents** — MCPServerComponent and built-in MCP Server for the Tagentacle bus.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 `tagentacle-py-mcp` provides MCP (Model Context Protocol) integration for the Tagentacle message bus:
 
-- **MCPServerNode** — Base class for building MCP Server Nodes. Runs Streamable HTTP, publishes to `/mcp/directory`.
-- **TagentacleMCPServer** — Built-in executable node exposing all bus interactions as MCP Tools.
+- **MCPServerComponent** — Composable MCP Server component. Manages FastMCP + Streamable HTTP + `/mcp/directory` publishing. Designed for has-a composition with any `LifecycleNode`.
+- **BusMCPServer** — Built-in executable node exposing all bus interactions as MCP Tools (previously `TagentacleMCPServer`; alias kept).
 
 ## Install
 
@@ -15,25 +15,39 @@
 pip install tagentacle-py-mcp
 ```
 
-This automatically installs `tagentacle-py-core`, `uvicorn`, `starlette`, and `mcp` as dependencies.
+This automatically installs `tagentacle-py-core`, `tagentacle-py-tacl`, `uvicorn`, `starlette`, and `mcp` as dependencies.
 
-## MCPServerNode (Base Class)
+## MCPServerComponent (Composition Pattern)
 
-Build your own MCP Server Node by subclassing `MCPServerNode`:
+Build your own MCP Server Node by composing `MCPServerComponent` with any `LifecycleNode`:
 
 ```python
-from tagentacle_py_mcp import MCPServerNode
+from tagentacle_py_core import LifecycleNode
+from tagentacle_py_mcp import MCPServerComponent
 
-class WeatherServer(MCPServerNode):
+class WeatherServer(LifecycleNode):
     def __init__(self):
-        super().__init__("weather_server", mcp_port=8100)
+        super().__init__("weather_server")
+        self.mcp_server = MCPServerComponent(
+            "weather_server", mcp_port=8100,
+            description="Weather tools",
+        )
 
     def on_configure(self, config):
-        super().on_configure(config)
-
-        @self.mcp.tool(description="Get weather for a city")
+        @self.mcp_server.mcp.tool(description="Get weather for a city")
         def get_weather(city: str) -> str:
             return f"Sunny in {city}"
+
+        self.mcp_server.configure(config)
+
+    async def on_activate(self):
+        await self.mcp_server.start(publish_fn=self.publish)
+
+    async def on_deactivate(self):
+        await self.mcp_server.stop(publish_fn=self.publish)
+
+    async def on_shutdown(self):
+        await self.mcp_server.shutdown()
 
 async def main():
     node = WeatherServer()
@@ -43,7 +57,7 @@ async def main():
 asyncio.run(main())
 ```
 
-On activation the node:
+On activation the component:
 1. Starts a Streamable HTTP server via uvicorn
 2. Publishes an `MCPServerDescription` to the `/mcp/directory` Topic
 3. Agent Nodes discover and connect via native MCP SDK HTTP client
@@ -54,16 +68,16 @@ On activation the node:
 |--------|-----|---------|
 | Constructor | `mcp_host` / `mcp_port` | `"127.0.0.1"` / `8000` |
 | Bringup config | `mcp_host` / `mcp_port` | overrides constructor |
-| Entry-point scripts | `MCP_HOST` / `MCP_PORT` env vars | used in `server_node.py` / `permission_node.py` CLI entry points |
+| Entry-point scripts | `MCP_HOST` / `MCP_PORT` env vars | used in `server_node.py` CLI entry point |
 
-## TagentacleMCPServer (Executable Node)
+## BusMCPServer (Executable Node)
 
 Built-in MCP Server exposing all bus interactions as MCP Tools:
 
 ```python
-from tagentacle_py_mcp import TagentacleMCPServer
+from tagentacle_py_mcp import BusMCPServer
 
-server = TagentacleMCPServer("bus_tools_node", allowed_topics=["/alerts", "/logs"])
+server = BusMCPServer("bus_tools_node", allowed_topics=["/alerts", "/logs"])
 await server.bringup()
 await server.spin()
 ```
@@ -85,31 +99,37 @@ await server.spin()
 
 ## TACL — Tagentacle Access Control Layer
 
-JWT-based MCP tool-level authentication. Three conjugate modules share `auth.py` as the symmetric center:
-
-```
-              auth.py (HS256 JWT protocol)
-             /           |            \
-  permission.py    server.py middleware  auth_client.py
-  sign_credential  verify_credential    carry JWT
-  (issuer)         (verifier)           (consumer)
-```
+JWT-based MCP tool-level authentication. TACL core has moved to [`tagentacle-py-tacl`](https://github.com/Tagentacle/python-sdk-tacl); auth primitives are re-exported here for backward compatibility.
 
 ### Enable Auth on Your MCP Server
 
 ```python
-class SecureServer(MCPServerNode):
+class SecureServer(LifecycleNode):
     def __init__(self):
-        super().__init__("secure_server", mcp_port=8100, auth_required=True)
+        super().__init__("secure_server")
+        self.mcp_server = MCPServerComponent(
+            "secure_server", mcp_port=8100,
+            description="Secure tools",
+            auth_required=True,
+        )
 
     def on_configure(self, config):
-        super().on_configure(config)
-
-        @self.mcp.tool(description="Sensitive operation")
+        @self.mcp_server.mcp.tool(description="Sensitive operation")
         def do_something() -> str:
             from tagentacle_py_mcp.auth import get_caller_identity
             caller = get_caller_identity()
             return f"Hello, {caller.agent_id}!"
+
+        self.mcp_server.configure(config)
+
+    async def on_activate(self):
+        await self.mcp_server.start(publish_fn=self.publish)
+
+    async def on_deactivate(self):
+        await self.mcp_server.stop(publish_fn=self.publish)
+
+    async def on_shutdown(self):
+        await self.mcp_server.shutdown()
 ```
 
 Set `TAGENTACLE_AUTH_SECRET` in the environment (shared by all auth-enabled servers and the permission server).
@@ -130,13 +150,13 @@ async with client.connect("http://127.0.0.1:8100/mcp") as session:
     result = await session.call_tool("do_something", {})
 ```
 
-### PermissionMCPServerNode (Credential Issuer)
+### TACLAuthority (Credential Issuer)
 
-Pre-built MCP Server that manages agent registry in SQLite and issues JWTs:
+Pre-built node (in `tagentacle-py-tacl[authority]`) that manages agent registry in SQLite and issues JWTs:
 
 ```bash
-# Install with permission support
-uv pip install tagentacle-py-mcp[permission]
+# Install with authority support
+uv pip install tagentacle-py-tacl[authority]
 
 # Run standalone
 export TAGENTACLE_AUTH_SECRET="your-secret"
@@ -158,11 +178,10 @@ Also exposes bus Services: `/tagentacle/permission/register_agent`, `/tagentacle
 
 This is a Tagentacle **executable pkg** (`type = "executable"` in `tagentacle.toml`) with a library component.
 
-- **Executable**: `TagentacleMCPServer` node (entry point: `server_node:main`)
-- **Executable**: `PermissionMCPServerNode` (entry point: `permission_node:main`)
-- **Library**: `MCPServerNode` base class, TACL auth primitives, `AuthMCPClient` — importable by other pkgs
+- **Executable**: `BusMCPServer` node (entry point: `server_node:main`)
+- **Library**: `MCPServerComponent`, TACL auth re-exports, `AuthMCPClient` — importable by other pkgs
 
-Dependencies: `[dependencies] tagentacle = ["tagentacle_py_core"]`
+Dependencies: `[dependencies] tagentacle = ["tagentacle_py_core", "tagentacle_py_tacl"]`
 
 ## License
 

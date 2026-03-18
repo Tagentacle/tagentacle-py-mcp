@@ -4,9 +4,9 @@
 
 - **Language**: Python ≥ 3.10
 - **Build**: `hatchling` (PEP 517)
-- **Package**: `tagentacle_py_mcp` — MCPServerNode, TagentacleMCPServer, TACL JWT auth
+- **Package**: `tagentacle_py_mcp` — MCPServerComponent, BusMCPServer, TACL re-exports
 - **Version**: Tracked in `pyproject.toml` — must match latest `CHANGELOG.md` release
-- **Dependencies**: `tagentacle-py-core`, `mcp>=1.8`, `anyio`, `uvicorn`, `starlette`
+- **Dependencies**: `tagentacle-py-core`, `tagentacle-py-tacl`, `mcp>=1.8`, `anyio`, `uvicorn`, `starlette`
 - **Tests**: `pytest` (currently no tests — adding them is a priority)
 
 ## CI Pipeline
@@ -47,8 +47,8 @@ Example test:
 import pytest
 
 @pytest.mark.asyncio
-async def test_mcp_server_node_lifecycle():
-    # Test that MCPServerNode can transition through lifecycle states
+async def test_mcp_server_component_lifecycle():
+    # Test that MCPServerComponent can configure / start / stop
     ...
 ```
 
@@ -81,10 +81,10 @@ cd ../test-bringup && pytest -v
 
 ## Architecture Notes
 
-- `MCPServerNode` extends `LifecycleNode` — adds Streamable HTTP MCP transport
-- `TagentacleMCPServer` wraps FastMCP + bus integration (MCP tools, Daemon system service proxying)
+- `MCPServerComponent` is a composable MCP Server component (no Node inheritance) — manages FastMCP + uvicorn + `/mcp/directory` publishing
+- `BusMCPServer(LifecycleNode)` has-a `MCPServerComponent` — exposes bus operations as MCP Tools
 - `/mcp/directory` topic: automatic `MCPServerDescription` publishing on activate/deactivate
-- TACL (Tagentacle Access Control Layer): JWT-based auth with `PermissionMCPServerNode`
+- TACL core lives in `tagentacle-py-tacl`; auth primitives re-exported here for backward compat
 - `CallerIdentity`: extracted from JWT — `node_id`, `role`, `space`
 - MCP is application layer — it runs ON the bus, not IN the bus
-- This package depends on `tagentacle-py-core` but core does NOT depend on this
+- This package depends on `tagentacle-py-core` and `tagentacle-py-tacl`; core does NOT depend on this

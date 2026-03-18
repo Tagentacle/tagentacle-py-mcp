@@ -6,8 +6,6 @@ This package provides:
   - MCPServerComponent: Composable MCP Server component (no Node inheritance).
     Manages FastMCP + uvicorn + /mcp/directory publishing. Designed for has-a
     composition with any LifecycleNode.
-  - MCPServerNode: DEPRECATED wrapper (LifecycleNode + MCPServerComponent).
-    Kept for backward compatibility. Use MCPServerComponent directly.
   - BusMCPServer: Built-in MCP Server exposing bus operations as MCP Tools.
     (Previously named TagentacleMCPServer; alias kept for backward compat.)
   - MCP_DIRECTORY_TOPIC: Standard topic name for MCP server discovery.
@@ -18,7 +16,6 @@ For backward compatibility, they are re-exported here.
 
 from tagentacle_py_mcp.server import (
     MCPServerComponent,
-    MCPServerNode,
     BusMCPServer,
     TagentacleMCPServer,  # backward compat alias
     TACLAuthMiddleware,
@@ -43,8 +40,7 @@ from tagentacle_py_tacl.client import AuthMCPClient
 __all__ = [
     # Component (recommended)
     "MCPServerComponent",
-    # Server (deprecated wrapper)
-    "MCPServerNode",
+    # Built-in servers
     "BusMCPServer",
     "TagentacleMCPServer",  # backward compat alias
     "TACLAuthMiddleware",

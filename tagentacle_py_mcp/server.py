@@ -5,8 +5,6 @@ This module provides:
   - MCPServerComponent: Composable MCP Server component. Manages FastMCP +
     uvicorn HTTP server + /mcp/directory publishing. Does NOT inherit Node —
     designed for has-a composition with any LifecycleNode.
-  - MCPServerNode: DEPRECATED thin wrapper (LifecycleNode + MCPServerComponent)
-    for backward compatibility. New code should use MCPServerComponent directly.
   - BusMCPServer: Built-in MCP Server that exposes Tagentacle bus
     operations (publish, subscribe, call_service, introspection) as MCP Tools.
     (Previously named TagentacleMCPServer; alias kept for backward compat.)
@@ -50,7 +48,6 @@ Usage (composition pattern — recommended):
 import asyncio
 import json
 import logging
-import warnings
 from typing import Any, Annotated, Callable, Coroutine, Dict, List, Optional
 
 import uvicorn
@@ -228,69 +225,6 @@ class MCPServerComponent:
             await publish_fn(MCP_DIRECTORY_TOPIC, self.directory_entry(status))
         except Exception as e:
             logger.warning("Failed to publish to %s: %s", MCP_DIRECTORY_TOPIC, e)
-
-
-# ---------------------------------------------------------------------------
-# MCPServerNode — DEPRECATED backward-compatible wrapper
-# ---------------------------------------------------------------------------
-
-
-class MCPServerNode(LifecycleNode):
-    """DEPRECATED: Use LifecycleNode + MCPServerComponent instead.
-
-    Thin wrapper that composes MCPServerComponent internally and wires
-    lifecycle hooks automatically.  Kept for backward compatibility with
-    existing subclasses (e.g. PermissionMCPServerNode).
-    """
-
-    def __init__(
-        self,
-        node_id: str,
-        *,
-        mcp_name: Optional[str] = None,
-        mcp_port: int = 8000,
-        mcp_host: str = "127.0.0.1",
-        mcp_path: str = "/mcp",
-        concurrent_sessions: bool = True,
-        description: str = "",
-        auth_required: bool = False,
-    ):
-        warnings.warn(
-            "MCPServerNode is deprecated. "
-            "Use LifecycleNode + MCPServerComponent instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(node_id)
-        self._mcp_component = MCPServerComponent(
-            server_id=node_id,
-            mcp_name=mcp_name,
-            mcp_port=mcp_port,
-            mcp_host=mcp_host,
-            mcp_path=mcp_path,
-            concurrent_sessions=concurrent_sessions,
-            description=description,
-            auth_required=auth_required,
-        )
-        # Passthrough for backward compat — subclasses use self.mcp
-        self.mcp = self._mcp_component.mcp
-
-    @property
-    def mcp_url(self) -> str:
-        """The full URL of this server's MCP endpoint."""
-        return self._mcp_component.mcp_url
-
-    def on_configure(self, config: Dict[str, Any]):
-        self._mcp_component.configure(config)
-
-    async def on_activate(self):
-        await self._mcp_component.start(publish_fn=self.publish)
-
-    async def on_deactivate(self):
-        await self._mcp_component.stop(publish_fn=self.publish)
-
-    async def on_shutdown(self):
-        await self._mcp_component.shutdown()
 
 
 class BusMCPServer(LifecycleNode):

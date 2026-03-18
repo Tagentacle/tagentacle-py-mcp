@@ -1,13 +1,13 @@
 # Tagentacle MCP 集成
 
-> **The ROS of AI Agents** — MCPServerNode 基类及内置 MCP Server。
+> **The ROS of AI Agents** — MCPServerComponent 组件及内置 MCP Server。
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 `tagentacle-py-mcp` 为 Tagentacle 消息总线提供 MCP（Model Context Protocol）集成：
 
-- **MCPServerNode** — MCP Server Node 基类。运行 Streamable HTTP，自动发布到 `/mcp/directory`。
-- **TagentacleMCPServer** — 内置可执行节点，将所有总线交互能力暴露为 MCP Tool。
+- **MCPServerComponent** — 可组合 MCP Server 组件。管理 FastMCP + Streamable HTTP + `/mcp/directory` 发布。设计为与任意 `LifecycleNode` 进行 has-a 组合。
+- **BusMCPServer** — 内置可执行节点，将所有总线交互能力暴露为 MCP Tool（原 `TagentacleMCPServer`；别名保留）。
 
 ## 安装
 
@@ -15,25 +15,39 @@
 pip install tagentacle-py-mcp
 ```
 
-自动安装 `tagentacle-py-core`、`uvicorn`、`starlette`、`mcp` 作为依赖。
+自动安装 `tagentacle-py-core`、`tagentacle-py-tacl`、`uvicorn`、`starlette`、`mcp` 作为依赖。
 
-## MCPServerNode（基类）
+## MCPServerComponent（组合模式）
 
-继承 `MCPServerNode` 构建自有 MCP Server Node：
+通过将 `MCPServerComponent` 与任意 `LifecycleNode` 组合来构建自有 MCP Server Node：
 
 ```python
-from tagentacle_py_mcp import MCPServerNode
+from tagentacle_py_core import LifecycleNode
+from tagentacle_py_mcp import MCPServerComponent
 
-class WeatherServer(MCPServerNode):
+class WeatherServer(LifecycleNode):
     def __init__(self):
-        super().__init__("weather_server", mcp_port=8100)
+        super().__init__("weather_server")
+        self.mcp_server = MCPServerComponent(
+            "weather_server", mcp_port=8100,
+            description="天气工具",
+        )
 
     def on_configure(self, config):
-        super().on_configure(config)
-
-        @self.mcp.tool(description="获取城市天气")
+        @self.mcp_server.mcp.tool(description="获取城市天气")
         def get_weather(city: str) -> str:
             return f"{city}: 晴天"
+
+        self.mcp_server.configure(config)
+
+    async def on_activate(self):
+        await self.mcp_server.start(publish_fn=self.publish)
+
+    async def on_deactivate(self):
+        await self.mcp_server.stop(publish_fn=self.publish)
+
+    async def on_shutdown(self):
+        await self.mcp_server.shutdown()
 
 async def main():
     node = WeatherServer()
@@ -43,7 +57,7 @@ async def main():
 asyncio.run(main())
 ```
 
-节点激活时：
+节点激活时组件会：
 1. 通过 uvicorn 启动 Streamable HTTP 服务器
 2. 向 `/mcp/directory` Topic 发布 `MCPServerDescription`
 3. Agent 节点通过原生 MCP SDK HTTP 客户端发现并连接
@@ -54,16 +68,16 @@ asyncio.run(main())
 |------|-----|--------|
 | 构造函数 | `mcp_host` / `mcp_port` | `"127.0.0.1"` / `8000` |
 | Bringup config | `mcp_host` / `mcp_port` | 覆盖构造函数 |
-| 入口脚本 | `MCP_HOST` / `MCP_PORT` 环境变量 | 在 `server_node.py` / `permission_node.py` CLI 入口中使用 |
+| 入口脚本 | `MCP_HOST` / `MCP_PORT` 环境变量 | 在 `server_node.py` CLI 入口中使用 |
 
-## TagentacleMCPServer（可执行节点）
+## BusMCPServer（可执行节点）
 
 内置 MCP Server，将所有总线交互能力暴露为 MCP Tool：
 
 ```python
-from tagentacle_py_mcp import TagentacleMCPServer
+from tagentacle_py_mcp import BusMCPServer
 
-server = TagentacleMCPServer("bus_tools_node", allowed_topics=["/alerts", "/logs"])
+server = BusMCPServer("bus_tools_node", allowed_topics=["/alerts", "/logs"])
 await server.bringup()
 await server.spin()
 ```
@@ -85,31 +99,37 @@ await server.spin()
 
 ## TACL — Tagentacle 访问控制层
 
-基于 JWT 的 MCP 工具级身份认证。三个共轭模块以 `auth.py` 为对称中心：
-
-```
-              auth.py (HS256 JWT 协议)
-             /           |            \
-  permission.py    server.py 中间件   auth_client.py
-  sign_credential  verify_credential  携带 JWT
-  (发行端)         (验证端)           (消费端)
-```
+基于 JWT 的 MCP 工具级身份认证。TACL 核心已移至 [`tagentacle-py-tacl`](https://github.com/Tagentacle/python-sdk-tacl)；认证原语在此处重导出以保持向后兼容。
 
 ### 为 MCP Server 启用认证
 
 ```python
-class SecureServer(MCPServerNode):
+class SecureServer(LifecycleNode):
     def __init__(self):
-        super().__init__("secure_server", mcp_port=8100, auth_required=True)
+        super().__init__("secure_server")
+        self.mcp_server = MCPServerComponent(
+            "secure_server", mcp_port=8100,
+            description="安全工具",
+            auth_required=True,
+        )
 
     def on_configure(self, config):
-        super().on_configure(config)
-
-        @self.mcp.tool(description="敏感操作")
+        @self.mcp_server.mcp.tool(description="敏感操作")
         def do_something() -> str:
             from tagentacle_py_mcp.auth import get_caller_identity
             caller = get_caller_identity()
             return f"你好, {caller.agent_id}!"
+
+        self.mcp_server.configure(config)
+
+    async def on_activate(self):
+        await self.mcp_server.start(publish_fn=self.publish)
+
+    async def on_deactivate(self):
+        await self.mcp_server.stop(publish_fn=self.publish)
+
+    async def on_shutdown(self):
+        await self.mcp_server.shutdown()
 ```
 
 在环境变量中设置 `TAGENTACLE_AUTH_SECRET`（所有 auth-enabled 服务器和权限服务器共享）。
@@ -130,13 +150,13 @@ async with client.connect("http://127.0.0.1:8100/mcp") as session:
     result = await session.call_tool("do_something", {})
 ```
 
-### PermissionMCPServerNode（凭证发行端）
+### TACLAuthority（凭证发行端）
 
-预制 MCP Server，使用 SQLite 管理 agent 注册表并签发 JWT：
+预制节点（在 `tagentacle-py-tacl[authority]` 中），使用 SQLite 管理 agent 注册表并签发 JWT：
 
 ```bash
 # 安装带权限支持的版本
-uv pip install tagentacle-py-mcp[permission]
+uv pip install tagentacle-py-tacl[authority]
 
 # 独立运行
 export TAGENTACLE_AUTH_SECRET="your-secret"
@@ -158,11 +178,10 @@ python permission_node.py
 
 这是一个 Tagentacle **executable pkg**（`tagentacle.toml` 中 `type = "executable"`），同时包含 library 组件。
 
-- **Executable**：`TagentacleMCPServer` 节点（入口：`server_node:main`）
-- **Executable**：`PermissionMCPServerNode`（入口：`permission_node:main`）
-- **Library**：`MCPServerNode` 基类、TACL 认证原语、`AuthMCPClient` — 可被其他 pkg import
+- **Executable**：`BusMCPServer` 节点（入口：`server_node:main`）
+- **Library**：`MCPServerComponent`、TACL 认证重导出、`AuthMCPClient` — 可被其他 pkg import
 
-依赖：`[dependencies] tagentacle = ["tagentacle_py_core"]`
+依赖：`[dependencies] tagentacle = ["tagentacle_py_core", "tagentacle_py_tacl"]`
 
 ## 许可证
 
