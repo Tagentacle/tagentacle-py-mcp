@@ -46,8 +46,8 @@ class TestSubscribeTopic:
         tool_fn = server.mcp._tool_manager._tools["subscribe_topic"].fn
         result = await tool_fn(topic="/chat/output", ctx=ctx)
 
-        assert "/chat/output" in server._subscribed_topics
-        assert server._subscription_levels["/chat/output"] == "trigger"
+        assert "/chat/output" in server.mailbox._subscribed_topics
+        assert server.mailbox._subscription_levels["/chat/output"] == "trigger"
         assert "level=trigger" in result
 
     @pytest.mark.asyncio
@@ -58,7 +58,7 @@ class TestSubscribeTopic:
         tool_fn = server.mcp._tool_manager._tools["subscribe_topic"].fn
         result = await tool_fn(topic="/sensors/temp", level="silent", ctx=ctx)
 
-        assert server._subscription_levels["/sensors/temp"] == "silent"
+        assert server.mailbox._subscription_levels["/sensors/temp"] == "silent"
         assert "level=silent" in result
 
     @pytest.mark.asyncio
@@ -74,8 +74,8 @@ class TestSubscribeTopic:
     async def test_subscribe_duplicate_returns_buffered_count(self):
         server = _make_bus_server()
         ctx = _fake_context()
-        server._subscribed_topics["/dup"] = [{"payload": "a"}]
-        server._subscription_levels["/dup"] = "trigger"
+        server.mailbox._subscribed_topics["/dup"] = [{"payload": "a"}]
+        server.mailbox._subscription_levels["/dup"] = "trigger"
 
         tool_fn = server.mcp._tool_manager._tools["subscribe_topic"].fn
         result = await tool_fn(topic="/dup", ctx=ctx)
@@ -92,7 +92,7 @@ class TestSubscribeTopic:
         tool_fn = server.mcp._tool_manager._tools["subscribe_topic"].fn
         await tool_fn(topic="/test", ctx=ctx)
 
-        assert server._mcp_session is session
+        assert server.mailbox._mcp_session is session
 
 
 class TestSetSubscriptionLevel:
@@ -101,13 +101,13 @@ class TestSetSubscriptionLevel:
     @pytest.mark.asyncio
     async def test_change_level(self):
         server = _make_bus_server()
-        server._subscribed_topics["/chat"] = []
-        server._subscription_levels["/chat"] = "trigger"
+        server.mailbox._subscribed_topics["/chat"] = []
+        server.mailbox._subscription_levels["/chat"] = "trigger"
 
         tool_fn = server.mcp._tool_manager._tools["set_subscription_level"].fn
         result = await tool_fn(topic="/chat", level="silent")
 
-        assert server._subscription_levels["/chat"] == "silent"
+        assert server.mailbox._subscription_levels["/chat"] == "silent"
         assert "trigger → silent" in result
 
     @pytest.mark.asyncio
@@ -122,8 +122,8 @@ class TestSetSubscriptionLevel:
     @pytest.mark.asyncio
     async def test_change_level_invalid_raises(self):
         server = _make_bus_server()
-        server._subscribed_topics["/x"] = []
-        server._subscription_levels["/x"] = "trigger"
+        server.mailbox._subscribed_topics["/x"] = []
+        server.mailbox._subscription_levels["/x"] = "trigger"
 
         tool_fn = server.mcp._tool_manager._tools["set_subscription_level"].fn
         with pytest.raises(ValueError, match="Invalid level"):
@@ -136,15 +136,15 @@ class TestUnsubscribeTopic:
     @pytest.mark.asyncio
     async def test_unsubscribe_clears_buffer_and_level(self):
         server = _make_bus_server()
-        server._subscribed_topics["/topic"] = [{"payload": "msg"}]
-        server._subscription_levels["/topic"] = "trigger"
+        server.mailbox._subscribed_topics["/topic"] = [{"payload": "msg"}]
+        server.mailbox._subscription_levels["/topic"] = "trigger"
         server.subscribers["/topic"] = [lambda m: None]
 
         tool_fn = server.mcp._tool_manager._tools["unsubscribe_topic"].fn
         result = await tool_fn(topic="/topic")
 
-        assert "/topic" not in server._subscribed_topics
-        assert "/topic" not in server._subscription_levels
+        assert "/topic" not in server.mailbox._subscribed_topics
+        assert "/topic" not in server.mailbox._subscription_levels
         assert "Cleared 1" in result
 
     @pytest.mark.asyncio
@@ -168,7 +168,7 @@ class TestPollMessages:
     @pytest.mark.asyncio
     async def test_poll_single_topic(self):
         server = _make_bus_server()
-        server._subscribed_topics["/chat"] = [
+        server.mailbox._subscribed_topics["/chat"] = [
             {"sender": "a", "payload": {"text": "hi"}, "ts": 1.0},
             {"sender": "b", "payload": {"text": "hey"}, "ts": 2.0},
         ]
@@ -180,12 +180,12 @@ class TestPollMessages:
         assert len(msgs) == 2
         assert msgs[0]["payload"]["text"] == "hi"
         # Buffer should be drained
-        assert server._subscribed_topics["/chat"] == []
+        assert server.mailbox._subscribed_topics["/chat"] == []
 
     @pytest.mark.asyncio
     async def test_poll_respects_limit(self):
         server = _make_bus_server()
-        server._subscribed_topics["/t"] = [
+        server.mailbox._subscribed_topics["/t"] = [
             {"sender": "x", "payload": {}, "ts": float(i)} for i in range(10)
         ]
 
@@ -194,13 +194,17 @@ class TestPollMessages:
         msgs = json.loads(result)
 
         assert len(msgs) == 3
-        assert len(server._subscribed_topics["/t"]) == 7
+        assert len(server.mailbox._subscribed_topics["/t"]) == 7
 
     @pytest.mark.asyncio
     async def test_poll_all_topics(self):
         server = _make_bus_server()
-        server._subscribed_topics["/a"] = [{"sender": "x", "payload": {}, "ts": 1.0}]
-        server._subscribed_topics["/b"] = [{"sender": "y", "payload": {}, "ts": 2.0}]
+        server.mailbox._subscribed_topics["/a"] = [
+            {"sender": "x", "payload": {}, "ts": 1.0}
+        ]
+        server.mailbox._subscribed_topics["/b"] = [
+            {"sender": "y", "payload": {}, "ts": 2.0}
+        ]
 
         tool_fn = server.mcp._tool_manager._tools["poll_messages"].fn
         result = await tool_fn(topic="", limit=50)
@@ -238,10 +242,10 @@ class TestMailboxResources:
 
     def test_mailbox_overview_with_topics(self):
         server = _make_bus_server()
-        server._subscribed_topics["/a"] = [{"x": 1}, {"x": 2}]
-        server._subscribed_topics["/b"] = []
-        server._subscription_levels["/a"] = "trigger"
-        server._subscription_levels["/b"] = "silent"
+        server.mailbox._subscribed_topics["/a"] = [{"x": 1}, {"x": 2}]
+        server.mailbox._subscribed_topics["/b"] = []
+        server.mailbox._subscription_levels["/a"] = "trigger"
+        server.mailbox._subscription_levels["/b"] = "silent"
 
         resource_fn = server.mcp._resource_manager._resources["bus://mailbox"].fn
         result = json.loads(resource_fn())
@@ -253,7 +257,7 @@ class TestMailboxResources:
 
     def test_mailbox_topic_messages(self):
         server = _make_bus_server()
-        server._subscribed_topics["/chat/out"] = [
+        server.mailbox._subscribed_topics["/chat/out"] = [
             {"sender": "a", "payload": {"text": "hello"}, "ts": 1.0},
         ]
 
@@ -291,9 +295,9 @@ class TestNotifications:
     async def test_notify_resource_updated_sends_to_session(self):
         server = _make_bus_server()
         session = AsyncMock()
-        server._mcp_session = session
+        server.mailbox._mcp_session = session
 
-        await server._notify_resource_updated("/chat/out")
+        await server.mailbox._notify_resource_updated("/chat/out")
 
         session.send_resource_updated.assert_called_once()
         call_uri = session.send_resource_updated.call_args.kwargs["uri"]
@@ -302,37 +306,37 @@ class TestNotifications:
     @pytest.mark.asyncio
     async def test_notify_resource_updated_no_session(self):
         server = _make_bus_server()
-        server._mcp_session = None
+        server.mailbox._mcp_session = None
 
         # Should not raise
-        await server._notify_resource_updated("/test")
+        await server.mailbox._notify_resource_updated("/test")
 
     @pytest.mark.asyncio
     async def test_notify_resource_updated_session_error(self):
         server = _make_bus_server()
         session = AsyncMock()
         session.send_resource_updated.side_effect = RuntimeError("disconnected")
-        server._mcp_session = session
+        server.mailbox._mcp_session = session
 
         # Should not raise — best effort
-        await server._notify_resource_updated("/topic")
+        await server.mailbox._notify_resource_updated("/topic")
 
     @pytest.mark.asyncio
     async def test_notify_resource_list_changed(self):
         server = _make_bus_server()
         session = AsyncMock()
-        server._mcp_session = session
+        server.mailbox._mcp_session = session
 
-        await server._notify_resource_list_changed()
+        await server.mailbox._notify_resource_list_changed()
 
         session.send_resource_list_changed.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_notify_resource_list_changed_no_session(self):
         server = _make_bus_server()
-        server._mcp_session = None
+        server.mailbox._mcp_session = None
 
-        await server._notify_resource_list_changed()
+        await server.mailbox._notify_resource_list_changed()
 
 
 # ---------------------------------------------------------------------------
@@ -359,8 +363,8 @@ class TestBusCallbackIntegration:
         msg = {"sender": "node_a", "payload": {"value": 42}}
         await callback(msg)
 
-        assert len(server._subscribed_topics["/data"]) == 1
-        buffered = server._subscribed_topics["/data"][0]
+        assert len(server.mailbox._subscribed_topics["/data"]) == 1
+        buffered = server.mailbox._subscribed_topics["/data"][0]
         assert buffered["sender"] == "node_a"
         assert buffered["payload"]["value"] == 42
         assert "ts" in buffered
@@ -392,7 +396,7 @@ class TestBusCallbackIntegration:
         await callback({"sender": "x", "payload": {}})
 
         # Message buffered but no notification
-        assert len(server._subscribed_topics["/bg"]) == 1
+        assert len(server.mailbox._subscribed_topics["/bg"]) == 1
         session.send_resource_updated.assert_not_called()
 
 

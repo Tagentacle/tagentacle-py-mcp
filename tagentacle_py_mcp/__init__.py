@@ -21,6 +21,7 @@ from tagentacle_py_mcp.server import (
     TACLAuthMiddleware,
     MCP_DIRECTORY_TOPIC,
 )
+from tagentacle_py_mcp.mailbox import BusMailboxComponent
 
 # Re-export TACL from the new package for backward compatibility
 from tagentacle_py_tacl.auth import (
@@ -40,6 +41,7 @@ from tagentacle_py_tacl.client import AuthMCPClient
 __all__ = [
     # Component (recommended)
     "MCPServerComponent",
+    "BusMailboxComponent",
     # Built-in servers
     "BusMCPServer",
     "TagentacleMCPServer",  # backward compat alias

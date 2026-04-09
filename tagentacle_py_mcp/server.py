@@ -48,13 +48,13 @@ Usage (composition pattern — recommended):
 import asyncio
 import json
 import logging
-import time
 from typing import Any, Annotated, Callable, Coroutine, Dict, List, Optional
 
 import uvicorn
-from mcp.server.fastmcp import FastMCP, Context
-from pydantic import AnyUrl, Field
+from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 from tagentacle_py_core import LifecycleNode
+from tagentacle_py_mcp.mailbox import BusMailboxComponent
 from tagentacle_py_tacl.middleware import TACLAuthMiddleware  # noqa: F401
 
 logger = logging.getLogger("tagentacle.mcp.server")
@@ -233,14 +233,14 @@ class MCPServerComponent:
 class BusMCPServer(LifecycleNode):
     """Built-in MCP Server exposing Tagentacle bus operations as MCP Tools.
 
-    Uses LifecycleNode + MCPServerComponent (composition, not inheritance).
+    Uses LifecycleNode + MCPServerComponent + BusMailboxComponent (composition).
 
     Provides MCP tools for bus interaction:
-      - publish_to_topic, subscribe_topic, unsubscribe_topic
-      - set_subscription_level, poll_messages
-      - list_nodes, list_topics, list_services
-      - get_node_info, describe_topic_schema
-      - call_bus_service, ping_daemon
+      - publish_to_topic (direct)
+      - subscribe_topic, unsubscribe_topic, set_subscription_level,
+        poll_messages (via BusMailboxComponent)
+      - list_nodes, list_topics, list_services, get_node_info,
+        describe_topic_schema, call_bus_service, ping_daemon (direct)
 
     Subscribed topics are exposed as MCP resources (``bus://mailbox/{topic}``).
     When level="trigger", new messages send ``notifications/resources/updated``.
@@ -274,14 +274,13 @@ class BusMCPServer(LifecycleNode):
         # Convenience alias — tools are registered on the FastMCP instance
         self.mcp = self.mcp_server.mcp
         self.allowed_topics = allowed_topics
-        # Per-topic message buffer: {topic: [msg_dict, ...]}
-        self._subscribed_topics: Dict[str, List[Dict[str, Any]]] = {}
-        # Per-topic subscription level: {topic: "trigger" | "silent"}
-        self._subscription_levels: Dict[str, str] = {}
-        # Active MCP session reference for sending notifications
-        self._mcp_session: Any = None
+
+        # Mailbox component — subscribe/poll tools + bus://mailbox resources
+        self.mailbox = BusMailboxComponent(
+            self, self.mcp, allowed_topics=allowed_topics
+        )
+
         self._register_bus_tools()
-        self._register_mailbox_resources()
 
     @property
     def mcp_url(self) -> str:
@@ -305,9 +304,9 @@ class BusMCPServer(LifecycleNode):
         await self.mcp_server.shutdown()
 
     def _register_bus_tools(self) -> None:
-        """Register all bus interaction tools with FastMCP."""
+        """Register publish, introspection, RPC, and health tools."""
 
-        # --- pub / sub ---
+        # --- publish ---
 
         @self.mcp.tool(
             description=(
@@ -326,122 +325,6 @@ class BusMCPServer(LifecycleNode):
                     )
             await self.publish(topic, payload)
             return f"Published to '{topic}' successfully."
-
-        @self.mcp.tool(
-            description=(
-                "Subscribe to a Tagentacle bus Topic and start buffering "
-                "incoming messages. A resource at bus://mailbox/{topic_path} "
-                "will be created. Use poll_messages to read buffered messages."
-            ),
-        )
-        async def subscribe_topic(
-            topic: Annotated[str, Field(description="Topic path, e.g. '/chat/output'")],
-            level: Annotated[
-                str,
-                Field(
-                    description="'trigger' (notify on message) or 'silent' (buffer only)"
-                ),
-            ] = "trigger",
-            ctx: Context | None = None,
-        ) -> str:
-            if level not in ("trigger", "silent"):
-                raise ValueError(f"Invalid level '{level}'. Use 'trigger' or 'silent'.")
-
-            if topic in self._subscribed_topics:
-                n = len(self._subscribed_topics[topic])
-                return f"Already subscribed to '{topic}'. {n} buffered message(s)."
-
-            self._subscribed_topics[topic] = []
-            self._subscription_levels[topic] = level
-
-            # Capture session for later notification sending
-            if ctx is not None:
-                try:
-                    self._mcp_session = ctx.session
-                except Exception:
-                    pass
-
-            @self.subscribe(topic)
-            async def _on_message(msg):
-                self._subscribed_topics.setdefault(topic, []).append(
-                    {
-                        "sender": msg.get("sender"),
-                        "payload": msg.get("payload"),
-                        "ts": time.time(),
-                    }
-                )
-                # Send resource updated notification if level=trigger
-                if self._subscription_levels.get(topic) == "trigger":
-                    await self._notify_resource_updated(topic)
-
-            # Notify client that resource list changed (new mailbox resource)
-            await self._notify_resource_list_changed()
-
-            return f"Subscribed to '{topic}' (level={level}). Messages buffered at bus://mailbox{topic}"
-
-        @self.mcp.tool(
-            description="Unsubscribe from a Topic and clear its message buffer.",
-        )
-        async def unsubscribe_topic(
-            topic: Annotated[str, Field(description="Topic path to unsubscribe from")],
-        ) -> str:
-            if topic not in self._subscribed_topics:
-                return f"Not subscribed to '{topic}'."
-            count = len(self._subscribed_topics.pop(topic, []))
-            self._subscription_levels.pop(topic, None)
-            self.subscribers.pop(topic, None)
-            await self._notify_resource_list_changed()
-            return f"Unsubscribed from '{topic}'. Cleared {count} buffered message(s)."
-
-        @self.mcp.tool(
-            description=(
-                "Change subscription level for an already-subscribed topic. "
-                "'trigger' sends notifications on new messages; 'silent' buffers only."
-            ),
-        )
-        async def set_subscription_level(
-            topic: Annotated[str, Field(description="Topic path")],
-            level: Annotated[str, Field(description="'trigger' or 'silent'")],
-        ) -> str:
-            if level not in ("trigger", "silent"):
-                raise ValueError(f"Invalid level '{level}'. Use 'trigger' or 'silent'.")
-            if topic not in self._subscribed_topics:
-                return f"Not subscribed to '{topic}'. Subscribe first."
-            old = self._subscription_levels.get(topic, "trigger")
-            self._subscription_levels[topic] = level
-            return f"Subscription level for '{topic}': {old} → {level}"
-
-        @self.mcp.tool(
-            description=(
-                "Read and drain buffered messages from a subscribed topic. "
-                "Returns up to `limit` messages and removes them from the buffer."
-            ),
-        )
-        async def poll_messages(
-            topic: Annotated[
-                str, Field(description="Topic path (omit to poll all)")
-            ] = "",
-            limit: Annotated[int, Field(description="Max messages to return")] = 50,
-        ) -> str:
-            if topic:
-                if topic not in self._subscribed_topics:
-                    return json.dumps({"error": f"Not subscribed to '{topic}'"})
-                msgs = self._subscribed_topics[topic][:limit]
-                self._subscribed_topics[topic] = self._subscribed_topics[topic][limit:]
-                return json.dumps(msgs, ensure_ascii=False, default=str)
-            else:
-                # Poll all topics
-                result: Dict[str, list] = {}
-                remaining = limit
-                for t in list(self._subscribed_topics):
-                    if remaining <= 0:
-                        break
-                    msgs = self._subscribed_topics[t][:remaining]
-                    self._subscribed_topics[t] = self._subscribed_topics[t][len(msgs) :]
-                    if msgs:
-                        result[t] = msgs
-                        remaining -= len(msgs)
-                return json.dumps(result, ensure_ascii=False, default=str)
 
         # --- introspection ---
 
@@ -511,60 +394,6 @@ class BusMCPServer(LifecycleNode):
         )
         async def ping_daemon() -> str:
             return await self._daemon_query("/tagentacle/ping", timeout=5.0)
-
-    def _register_mailbox_resources(self) -> None:
-        """Register dynamic MCP resources for mailbox access."""
-
-        @self.mcp.resource(
-            "bus://mailbox",
-            name="mailbox_overview",
-            description="Overview of all subscribed topics with unread message counts.",
-            mime_type="application/json",
-        )
-        def mailbox_overview() -> str:
-            overview = {}
-            for topic, msgs in self._subscribed_topics.items():
-                overview[topic] = {
-                    "unread": len(msgs),
-                    "level": self._subscription_levels.get(topic, "trigger"),
-                }
-            return json.dumps(overview, ensure_ascii=False, indent=2)
-
-        @self.mcp.resource(
-            "bus://mailbox/{topic_path}",
-            name="mailbox_topic",
-            description="Peek at buffered messages for a topic (non-destructive, use poll_messages to drain).",
-            mime_type="application/json",
-        )
-        def mailbox_topic(topic_path: str) -> str:
-            topic = f"/{topic_path}"
-            msgs = self._subscribed_topics.get(topic, [])
-            return json.dumps(
-                {"topic": topic, "count": len(msgs), "messages": msgs[-20:]},
-                ensure_ascii=False,
-                default=str,
-            )
-
-    async def _notify_resource_updated(self, topic: str) -> None:
-        """Best-effort send resource updated notification for a mailbox topic."""
-        if self._mcp_session is None:
-            return
-        try:
-            # Strip leading slash for the resource URI path
-            topic_path = topic.lstrip("/")
-            uri = AnyUrl(f"bus://mailbox/{topic_path}")
-            await self._mcp_session.send_resource_updated(uri=uri)
-        except Exception as e:
-            logger.debug("Failed to send resource notification for %s: %s", topic, e)
-
-    async def _notify_resource_list_changed(self) -> None:
-        """Best-effort notify client that the resource list changed."""
-        if self._mcp_session is None:
-            return
-        try:
-            await self._mcp_session.send_resource_list_changed()
-        except Exception as e:
-            logger.debug("Failed to send resource list changed: %s", e)
 
     async def _daemon_query(
         self, service: str, payload: Optional[dict] = None, *, timeout: float = 10.0
