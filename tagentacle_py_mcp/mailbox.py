@@ -300,5 +300,6 @@ class InboxMCP:
         except Exception as e:
             logger.debug("Failed to send resource list changed: %s", e)
 
+
 # Backward compatibility alias (Q27)
 BusMailboxComponent = InboxMCP

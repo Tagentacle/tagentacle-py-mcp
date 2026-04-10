@@ -276,9 +276,7 @@ class BusMCPNode(LifecycleNode):
         self.allowed_topics = allowed_topics
 
         # Mailbox component — subscribe/poll tools + bus://mailbox resources
-        self.mailbox = InboxMCP(
-            self, self.mcp, allowed_topics=allowed_topics
-        )
+        self.mailbox = InboxMCP(self, self.mcp, allowed_topics=allowed_topics)
 
         self._register_bus_tools()
 

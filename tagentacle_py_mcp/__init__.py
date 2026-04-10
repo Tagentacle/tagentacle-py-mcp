@@ -24,7 +24,10 @@ from tagentacle_py_mcp.server import (
     TACLAuthMiddleware,
     MCP_DIRECTORY_TOPIC,
 )
-from tagentacle_py_mcp.mailbox import InboxMCP, BusMailboxComponent  # BusMailboxComponent = compat alias
+from tagentacle_py_mcp.mailbox import (
+    InboxMCP,
+    BusMailboxComponent,
+)  # BusMailboxComponent = compat alias
 
 # Re-export TACL from the new package for backward compatibility
 from tagentacle_py_tacl.auth import (
