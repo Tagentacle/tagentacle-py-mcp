@@ -705,7 +705,7 @@ wheels = [
 [[package]]
 name = "tagentacle-py-core"
 version = "0.3.0"
-source = { editable = "../python-sdk-core" }
+source = { editable = "../tagentacle-py-core" }
 
 [package.metadata]
 requires-dist = [{ name = "jsonschema", marker = "extra == 'validation'", specifier = ">=4.0" }]
@@ -731,8 +731,8 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.8" },
     { name = "mcp-interfaces", editable = "../mcp-interfaces" },
     { name = "starlette" },
-    { name = "tagentacle-py-core", editable = "../python-sdk-core" },
-    { name = "tagentacle-py-tacl", editable = "../python-sdk-tacl" },
+    { name = "tagentacle-py-core", editable = "../tagentacle-py-core" },
+    { name = "tagentacle-py-tacl", editable = "../tagentacle-py-tacl" },
     { name = "uvicorn", specifier = ">=0.20" },
 ]
 provides-extras = ["permission"]
@@ -740,7 +740,7 @@ provides-extras = ["permission"]
 [[package]]
 name = "tagentacle-py-tacl"
 version = "0.1.0"
-source = { editable = "../python-sdk-tacl" }
+source = { editable = "../tagentacle-py-tacl" }
 dependencies = [
     { name = "mcp" },
     { name = "pyjwt" },
@@ -753,8 +753,8 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.8" },
     { name = "pyjwt", specifier = ">=2.8" },
     { name = "starlette" },
-    { name = "tagentacle-py-core", editable = "../python-sdk-core" },
-    { name = "tagentacle-py-mcp", marker = "extra == 'authority'", specifier = ">=0.4.0" },
+    { name = "tagentacle-py-core", editable = "../tagentacle-py-core" },
+    { name = "tagentacle-py-mcp", marker = "extra == 'authority'", editable = "." },
 ]
 provides-extras = ["authority"]
 

@@ -128,6 +128,45 @@ class InboxMCP:
         """Get the subscription level for a topic, or None if not subscribed."""
         return self._subscription_levels.get(topic)
 
+    def is_subscribed(self, topic: str) -> bool:
+        """True if the mailbox is currently buffering this topic."""
+        return topic in self._subscribed_topics
+
+    def register(self, topic: str, level: str = "trigger") -> None:
+        """Register a topic as subscribed (Python API).
+
+        Initializes the buffer and level without registering an MCP-side
+        bus callback — the caller is expected to wire ``node.subscribe``.
+        Idempotent: re-registering only updates the level.
+        """
+        if level not in ("trigger", "silent"):
+            raise ValueError(f"Invalid level '{level}'. Use 'trigger' or 'silent'.")
+        self._subscribed_topics.setdefault(topic, [])
+        self._subscription_levels[topic] = level
+
+    def set_level(self, topic: str, level: str) -> str:
+        """Update the subscription level for an already-registered topic.
+
+        Returns the previous level. Raises ``KeyError`` if not subscribed.
+        """
+        if level not in ("trigger", "silent"):
+            raise ValueError(f"Invalid level '{level}'. Use 'trigger' or 'silent'.")
+        if topic not in self._subscribed_topics:
+            raise KeyError(topic)
+        old = self._subscription_levels.get(topic, "trigger")
+        self._subscription_levels[topic] = level
+        return old
+
+    def forget(self, topic: str) -> int:
+        """Drop subscription state for a topic (Python API).
+
+        Returns the number of buffered messages cleared. Caller is
+        responsible for unwiring the bus subscription if needed.
+        """
+        msgs = self._subscribed_topics.pop(topic, [])
+        self._subscription_levels.pop(topic, None)
+        return len(msgs)
+
     # ------------------------------------------------------------------
     # MCP tools
     # ------------------------------------------------------------------
